@@ -34,8 +34,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 24 }}>
-          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.5px', color: '#AA9682' }}>codi</span>
-          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-0.5px', color: '#fff' }}>flow</span>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            <img src="/logo.png" alt="Codiflow" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+          </div>
+          <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px' }}>
+            <span style={{ color: '#AA9682' }}>codi</span><span style={{ color: '#fff' }}>flow</span>
+          </span>
         </div>
 
         {/* Nav links */}
