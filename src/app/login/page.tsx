@@ -1,11 +1,13 @@
 'use client'
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { createClient } from '@/lib/supabase/client'
 
-type Mode = 'signin' | 'signup'
+type Mode = 'signin' | 'signup' | 'forgot'
 
 export default function LoginPage() {
   const { signInWithPassword, signUp } = useAuth()
+  const supabase = createClient()
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -13,12 +15,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [signedUp, setSignedUp] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   function switchMode(next: Mode) {
     setMode(next)
     setError('')
     setPassword('')
     setConfirm('')
+    setResetSent(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -43,11 +47,19 @@ export default function LoginPage() {
       const { error } = await signInWithPassword(trimmedEmail, password)
       setLoading(false)
       if (error) setError(error.message)
-    } else {
+    } else if (mode === 'signup') {
       const { error } = await signUp(trimmedEmail, password)
       setLoading(false)
       if (error) setError(error.message)
       else setSignedUp(true)
+    } else {
+      // forgot password
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+      })
+      setLoading(false)
+      if (error) setError(error.message)
+      else setResetSent(true)
     }
   }
 
@@ -86,7 +98,7 @@ export default function LoginPage() {
         </div>
 
         {/* Mode tabs */}
-        {!signedUp && (
+        {!signedUp && mode !== 'forgot' && (
           <div style={{
             display: 'flex', background: '#F4F3EF', borderRadius: 10,
             padding: 4, marginBottom: 24, gap: 4,
@@ -111,115 +123,160 @@ export default function LoginPage() {
           </div>
         )}
 
-        {/* Sign-up success */}
-        {signedUp ? (
-          <div style={{
-            background: '#EEFBF4', border: '1px solid #A8E6C3', borderRadius: 10,
-            padding: 20, textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>✉️</div>
-            <p style={{ fontWeight: 600, color: '#2B8B57', marginBottom: 6 }}>Account created!</p>
-            <p style={{ fontSize: 13, color: '#4A7A5A' }}>
-              Check <strong>{email}</strong> for a confirmation link,<br />
-              then come back here to sign in.
-            </p>
-            <button
-              onClick={() => { setSignedUp(false); switchMode('signin') }}
-              style={{
-                marginTop: 14, fontSize: 12, color: '#9C998F',
-                background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline',
-              }}
-            >
-              Back to sign in
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            {/* Email */}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>
-                Work Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@cottondivision.com"
-                required
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')}
-                onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')}
-              />
+        {/* Forgot password mode */}
+        {mode === 'forgot' && (
+          resetSent ? (
+            <div style={{ background: '#EEFBF4', border: '1px solid #A8E6C3', borderRadius: 10, padding: 20, textAlign: 'center' }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>✉️</div>
+              <p style={{ fontWeight: 600, color: '#2B8B57', marginBottom: 6 }}>Reset link sent!</p>
+              <p style={{ fontSize: 13, color: '#4A7A5A' }}>Check <strong>{email}</strong> for a password reset link.</p>
+              <button onClick={() => switchMode('signin')} style={{ marginTop: 14, fontSize: 12, color: '#9C998F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                Back to sign in
+              </button>
             </div>
-
-            {/* Password */}
-            <div style={{ marginBottom: mode === 'signup' ? 14 : 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'signup' ? 'Min. 8 characters' : '••••••••'}
-                required
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')}
-                onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')}
-              />
-            </div>
-
-            {/* Confirm password (sign-up only) */}
-            {mode === 'signup' && (
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <p style={{ fontSize: 13, color: '#5A5A6A', marginBottom: 18, lineHeight: 1.5 }}>
+                Enter your email and we'll send you a link to reset your password.
+              </p>
               <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>Work Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@cottondivision.com" required style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')} onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')} />
+              </div>
+              {error && (
+                <div style={{ background: '#FFF0F0', border: '1px solid #FFB8B8', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#C0392B' }}>{error}</div>
+              )}
+              <button type="submit" disabled={loading || !email} style={{ width: '100%', padding: '11px', background: loading ? '#8BA5C4' : '#2D4A6F', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: loading ? 'not-allowed' : 'pointer' }}>
+                {loading ? 'Sending…' : 'Send Reset Link'}
+              </button>
+              <button type="button" onClick={() => switchMode('signin')} style={{ width: '100%', marginTop: 10, fontSize: 12, color: '#9C998F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                Back to sign in
+              </button>
+            </form>
+          )
+        )}
+
+        {/* Sign-up / sign-in */}
+        {mode !== 'forgot' && (
+          signedUp ? (
+            <div style={{
+              background: '#EEFBF4', border: '1px solid #A8E6C3', borderRadius: 10,
+              padding: 20, textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>✉️</div>
+              <p style={{ fontWeight: 600, color: '#2B8B57', marginBottom: 6 }}>Account created!</p>
+              <p style={{ fontSize: 13, color: '#4A7A5A' }}>
+                Check <strong>{email}</strong> for a confirmation link,<br />
+                then come back here to sign in.
+              </p>
+              <button
+                onClick={() => { setSignedUp(false); switchMode('signin') }}
+                style={{
+                  marginTop: 14, fontSize: 12, color: '#9C998F',
+                  background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline',
+                }}
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              {/* Email */}
+              <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>
-                  Confirm Password
+                  Work Email
                 </label>
                 <input
-                  type="password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="••••••••"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@cottondivision.com"
                   required
                   style={inputStyle}
                   onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')}
                   onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')}
                 />
               </div>
-            )}
 
-            {/* Error */}
-            {error && (
-              <div style={{
-                background: '#FFF0F0', border: '1px solid #FFB8B8', borderRadius: 8,
-                padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#C0392B',
-              }}>
-                {error}
+              {/* Password */}
+              <div style={{ marginBottom: mode === 'signup' ? 14 : 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === 'signup' ? 'Min. 8 characters' : '••••••••'}
+                  required
+                  style={inputStyle}
+                  onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')}
+                  onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')}
+                />
               </div>
-            )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading || !email || !password}
-              style={{
-                width: '100%', padding: '11px',
-                background: loading ? '#8BA5C4' : '#2D4A6F',
-                color: '#fff', border: 'none', borderRadius: 8,
-                fontWeight: 600, fontSize: 14,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'background 0.15s',
-              }}
-            >
-              {loading
-                ? (mode === 'signin' ? 'Signing in…' : 'Creating account…')
-                : (mode === 'signin' ? 'Sign In' : 'Create Account')}
-            </button>
+              {/* Forgot password link (sign-in only) */}
+              {mode === 'signin' && (
+                <div style={{ textAlign: 'right', marginBottom: 16 }}>
+                  <button type="button" onClick={() => switchMode('forgot')} style={{ fontSize: 12, color: '#2D4A6F', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Forgot password?
+                  </button>
+                </div>
+              )}
 
-            <p style={{ fontSize: 12, color: '#9C998F', textAlign: 'center', marginTop: 14 }}>
-              Only @cottondivision.com emails accepted.
-            </p>
-          </form>
+              {/* Confirm password (sign-up only) */}
+              {mode === 'signup' && (
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#5A5A6A', display: 'block', marginBottom: 6 }}>
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    style={inputStyle}
+                    onFocus={(e) => (e.target.style.borderColor = '#2D4A6F')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E5E2DA')}
+                  />
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div style={{
+                  background: '#FFF0F0', border: '1px solid #FFB8B8', borderRadius: 8,
+                  padding: '8px 12px', marginBottom: 14, fontSize: 13, color: '#C0392B',
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading || !email || !password}
+                style={{
+                  width: '100%', padding: '11px',
+                  background: loading ? '#8BA5C4' : '#2D4A6F',
+                  color: '#fff', border: 'none', borderRadius: 8,
+                  fontWeight: 600, fontSize: 14,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {loading
+                  ? (mode === 'signin' ? 'Signing in…' : 'Creating account…')
+                  : (mode === 'signin' ? 'Sign In' : 'Create Account')}
+              </button>
+
+              <p style={{ fontSize: 12, color: '#9C998F', textAlign: 'center', marginTop: 14 }}>
+                Only @cottondivision.com emails accepted.
+              </p>
+            </form>
+          )
         )}
       </div>
     </div>
