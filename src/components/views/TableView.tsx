@@ -22,7 +22,7 @@ const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '
 
 function applyFilters(records: LicRecord[], f: Filters): LicRecord[] {
   // Reminders mode: only pending reminders, sorted by due date
-  if (f.showReminders) {
+  if (f.showReminders === true) {
     return records
       .filter((r) => !r.is_archived && r.reminder_date && !r.reminder_done)
       .sort((a, b) => (a.reminder_date! > b.reminder_date! ? 1 : -1))

@@ -114,5 +114,5 @@ export interface Filters {
   priority: string;
   waitingOn: string;
   showArchived: boolean;
-  showReminders: boolean;
+  showReminders?: boolean;
 }
