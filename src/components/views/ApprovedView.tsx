@@ -10,7 +10,7 @@ import Avatar from '@/components/ui/Avatar'
 
 interface Props { initialRecords: LicRecord[]; team: Profile[] }
 
-const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '', owner: '', priority: '', waitingOn: '', showArchived: false }
+const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '', owner: '', priority: '', waitingOn: '', showArchived: false, showReminders: false }
 
 export default function ApprovedView({ initialRecords, team }: Props) {
   const { profile, can } = useAuth()

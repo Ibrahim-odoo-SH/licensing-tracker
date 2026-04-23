@@ -13,7 +13,7 @@ import NotifyModal from '@/components/notifications/NotifyModal'
 
 interface Props { initialRecords: LicRecord[]; team: Profile[] }
 
-const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '', owner: '', priority: '', waitingOn: '', showArchived: false }
+const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '', owner: '', priority: '', waitingOn: '', showArchived: false, showReminders: false }
 
 function applyFilters(records: LicRecord[], f: Filters) {
   return records.filter((r) => {
