@@ -33,6 +33,7 @@ export default function RecordDrawer({ record, team, onClose, onUpdate, onDelete
   const [postingComment, setPostingComment] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showNotify, setShowNotify] = useState(false)
+  const [settingCover, setSettingCover] = useState<string | null>(null)
 
   useEffect(() => {
     loadComments()
@@ -101,10 +102,26 @@ export default function RecordDrawer({ record, team, onClose, onUpdate, onDelete
     const { error: upErr } = await supabase.storage.from('record-attachments').upload(filePath, file, { contentType: file.type, upsert: false })
     if (!upErr) {
       const { data: { publicUrl } } = supabase.storage.from('record-attachments').getPublicUrl(filePath)
-      await supabase.from('record_attachments').insert({ record_id: record.id, file_name: file.name, file_path: filePath, file_type: file.type, file_size: file.size, public_url: publicUrl, uploaded_by: profile?.id })
+      // Auto-set as primary if it's the first image and no primary exists yet
+      const hasPrimary = attachments.some((a) => a.is_primary && a.file_type?.startsWith('image/'))
+      const isPrimary = file.type.startsWith('image/') && !hasPrimary
+      await supabase.from('record_attachments').insert({
+        record_id: record.id, file_name: file.name, file_path: filePath,
+        file_type: file.type, file_size: file.size, public_url: publicUrl,
+        uploaded_by: profile?.id, is_primary: isPrimary,
+      })
       await loadAttachments()
     }
     setUploading(false)
+  }
+
+  async function setCoverImage(att: Attachment) {
+    setSettingCover(att.id)
+    // Unset all primaries for this record, then set the selected one
+    await supabase.from('record_attachments').update({ is_primary: false }).eq('record_id', record.id)
+    await supabase.from('record_attachments').update({ is_primary: true }).eq('id', att.id)
+    await loadAttachments()
+    setSettingCover(null)
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -197,7 +214,7 @@ export default function RecordDrawer({ record, team, onClose, onUpdate, onDelete
               uploading={uploading}
             />
           ) : tab === 'details' ? (
-            <DetailsTab record={record} attachments={attachments} onStageChange={handleStageChange} onPriorityChange={handlePriorityChange} onUpload={handleUpload} onDeleteAttachment={deleteAttachment} uploading={uploading} can={can} />
+            <DetailsTab record={record} attachments={attachments} onStageChange={handleStageChange} onPriorityChange={handlePriorityChange} onUpload={handleUpload} onDeleteAttachment={deleteAttachment} onSetCover={setCoverImage} settingCover={settingCover} uploading={uploading} can={can} />
           ) : tab === 'comments' ? (
             <CommentsTab comments={comments} newComment={newComment} setNewComment={setNewComment} onPost={postComment} posting={postingComment} can={can} />
           ) : (
@@ -220,11 +237,13 @@ interface DetailsTabProps {
   onPriorityChange: (priority: string) => void
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
   onDeleteAttachment: (att: Attachment) => void
+  onSetCover: (att: Attachment) => void
+  settingCover: string | null
   uploading: boolean
   can: (key: PermKey) => boolean
 }
 
-function DetailsTab({ record, attachments, onStageChange, onPriorityChange, onUpload, onDeleteAttachment, uploading, can }: DetailsTabProps) {
+function DetailsTab({ record, attachments, onStageChange, onPriorityChange, onUpload, onDeleteAttachment, onSetCover, settingCover, uploading, can }: DetailsTabProps) {
   const kv = (label: string, val: React.ReactNode) => val ? (
     <div style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: '1px solid #F0EDE8' }}>
       <span style={{ minWidth: 140, fontSize: 12, color: '#9C998F', flexShrink: 0 }}>{label}</span>
@@ -317,23 +336,56 @@ function DetailsTab({ record, attachments, onStageChange, onPriorityChange, onUp
           )}
         </div>
         {attachments.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
             {attachments.map((att) => (
-              <div key={att.id} style={{ position: 'relative' }}>
+              <div key={att.id} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {att.file_type?.startsWith('image/') ? (
-                  <a href={att.public_url} target="_blank" rel="noopener noreferrer">
-                    <img src={att.public_url} alt={att.file_name} style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid #E5E2DA' }} />
-                  </a>
+                  <div style={{ position: 'relative' }}>
+                    <a href={att.public_url} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={att.public_url}
+                        alt={att.file_name}
+                        style={{
+                          width: 80, height: 80, objectFit: 'cover', borderRadius: 8, display: 'block',
+                          border: att.is_primary ? '2px solid #AA9682' : '1px solid #E5E2DA',
+                          boxShadow: att.is_primary ? '0 0 0 3px rgba(170,150,130,0.2)' : 'none',
+                        }}
+                      />
+                    </a>
+                    {att.is_primary && (
+                      <span style={{ position: 'absolute', bottom: 4, left: 4, background: '#AA9682', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 4, padding: '1px 5px', letterSpacing: '0.05em' }}>COVER</span>
+                    )}
+                  </div>
                 ) : (
                   <a href={att.public_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-                    <div style={{ width: 72, height: 72, background: '#F4F3EF', border: '1px solid #E5E2DA', borderRadius: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 20 }}>📎</span>
+                    <div style={{ width: 80, height: 80, background: '#F4F3EF', border: '1px solid #E5E2DA', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 22 }}>📎</span>
                       <span style={{ fontSize: 9, color: '#9C998F', textAlign: 'center', padding: '0 4px' }}>{att.file_name.split('.').pop()?.toUpperCase()}</span>
                     </div>
                   </a>
                 )}
+
+                {/* Action buttons below each attachment */}
                 {can('editRecords') && (
-                  <button onClick={() => onDeleteAttachment(att)} style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: '#C0392B', color: '#fff', border: 'none', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                    {att.file_type?.startsWith('image/') && !att.is_primary && (
+                      <button
+                        onClick={() => onSetCover(att)}
+                        disabled={settingCover === att.id}
+                        title="Set as table thumbnail"
+                        style={{ padding: '2px 6px', background: '#F5EFE9', border: '1px solid #D8C8B8', borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: 'pointer', color: '#AA9682', whiteSpace: 'nowrap' }}
+                      >
+                        {settingCover === att.id ? '…' : '⭐ Cover'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onDeleteAttachment(att)}
+                      title="Delete"
+                      style={{ padding: '2px 6px', background: '#FFF0F0', border: '1px solid #FFB8B8', borderRadius: 4, fontSize: 9, cursor: 'pointer', color: '#A35C5C' }}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 )}
               </div>
             ))}

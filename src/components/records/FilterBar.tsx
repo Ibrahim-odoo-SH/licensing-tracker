@@ -39,7 +39,7 @@ export default function FilterBar({ filters, onChange, owners, hideStage, extraA
         onChange={(e) => set('search', e.target.value)}
       />
 
-      <select style={sel} value={filters.brand} onChange={(e) => { set('brand', e.target.value); set('property', '') }}>
+      <select style={sel} value={filters.brand} onChange={(e) => onChange({ ...filters, brand: e.target.value, property: '' })}>
         <option value="">All Brands</option>
         {BRANDS.map((b) => <option key={b}>{b}</option>)}
       </select>

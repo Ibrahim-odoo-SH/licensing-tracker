@@ -16,6 +16,7 @@ interface Props {
   initialRecords: LicRecord[]
   team: Profile[]
   initialFilters?: Partial<Filters>
+  thumbnails?: Record<string, string>
 }
 
 const DEFAULT_FILTERS: Filters = { search: '', brand: '', property: '', stage: '', owner: '', priority: '', waitingOn: '', showArchived: false, showReminders: false }
@@ -44,7 +45,7 @@ function applyFilters(records: LicRecord[], f: Filters): LicRecord[] {
   })
 }
 
-export default function TableView({ initialRecords, team, initialFilters }: Props) {
+export default function TableView({ initialRecords, team, initialFilters, thumbnails = {} }: Props) {
   const { profile, can } = useAuth()
   const supabase = createClient()
   const [records, setRecords] = useState<LicRecord[]>(initialRecords)
@@ -155,18 +156,11 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
         onChange={setFilters}
         owners={owners}
         extraActions={
-          <div style={{ display: 'flex', gap: 8 }}>
-            {can('exportCSV') && (
-              <button onClick={exportCSV} style={{ padding: '6px 12px', background: '#F4F3EF', border: '1px solid #E5E2DA', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
-                ↓ Export CSV
-              </button>
-            )}
-            {can('createRecords') && (
-              <button onClick={() => setCreating(true)} style={{ padding: '6px 14px', background: '#2D4A6F', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                + New Record
-              </button>
-            )}
-          </div>
+          can('exportCSV') ? (
+            <button onClick={exportCSV} style={{ padding: '6px 12px', background: '#F4F3EF', border: '1px solid #E5E2DA', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 500 }}>
+              ↓ Export CSV
+            </button>
+          ) : undefined
         }
       />
 
@@ -178,6 +172,7 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead style={{ position: 'sticky', top: 0, background: '#FAFAF8', zIndex: 1 }}>
             <tr>
+              <th style={{ ...thStyle, width: 52 }}>IMG</th>
               <th style={thStyle}>Ref</th>
               <th style={thStyle}>Licensor Ref</th>
               <th style={thStyle}>Product</th>
@@ -201,6 +196,20 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
                   style={{ cursor: 'pointer', transition: 'background 0.1s' }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = '#F9F8F5')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = '')}>
+                  <td style={{ ...tdStyle, padding: '6px 8px' }} onClick={(e) => e.stopPropagation()}>
+                    {thumbnails[r.id] ? (
+                      <img
+                        src={thumbnails[r.id]}
+                        alt={r.product_name}
+                        style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid #E5E2DA', display: 'block', cursor: 'pointer' }}
+                        onClick={() => setSelected(r)}
+                      />
+                    ) : (
+                      <div style={{ width: 40, height: 40, borderRadius: 6, background: '#F0EDE8', border: '1px solid #E5E2DA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#C8C3BB' }}>
+                        🖼
+                      </div>
+                    )}
+                  </td>
                   <td style={tdStyle}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 4, height: 28, background: BRAND_COLORS[r.brand] ?? '#ccc', borderRadius: 2, flexShrink: 0 }} />
@@ -280,7 +289,7 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={12} style={{ padding: 40, textAlign: 'center', color: '#9C998F' }}>No records match your filters.</td></tr>
+              <tr><td colSpan={13} style={{ padding: 40, textAlign: 'center', color: '#9C998F' }}>No records match your filters.</td></tr>
             )}
           </tbody>
         </table>
