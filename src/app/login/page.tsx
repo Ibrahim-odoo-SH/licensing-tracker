@@ -49,6 +49,7 @@ export default function LoginPage() {
       const { error } = await signInWithPassword(trimmedEmail, password)
       setLoading(false)
       if (error) setError(error.message)
+      else router.push('/dashboard')
     } else if (mode === 'signup') {
       const { error, session } = await signUp(trimmedEmail, password)
       setLoading(false)

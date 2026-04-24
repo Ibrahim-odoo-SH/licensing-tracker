@@ -40,9 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) await loadProfile(session.user.id)
+      if (session?.user) loadProfile(session.user.id) // non-blocking — profile loads in background
       else setProfile(null)
     })
 
