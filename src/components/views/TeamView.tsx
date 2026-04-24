@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 import type { Profile, PermKey } from '@/lib/types'
@@ -8,7 +8,7 @@ import { getEffectivePerms } from '@/lib/permissions'
 import Avatar from '@/components/ui/Avatar'
 import { fmtDate } from '@/lib/utils'
 
-interface Props { team: Profile[] }
+interface Props { team?: Profile[] }
 
 const ROLES = ['admin', 'editor', 'viewer', 'commenter'] as const
 
@@ -24,7 +24,17 @@ const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
 export default function TeamView({ team: initialTeam }: Props) {
   const { profile: me, can, refreshProfile } = useAuth()
   const supabase = createClient()
-  const [team, setTeam] = useState<Profile[]>(initialTeam)
+  const [team, setTeam] = useState<Profile[]>(initialTeam ?? [])
+  const [loadingTeam, setLoadingTeam] = useState(!initialTeam)
+
+  // Fetch team client-side (no server-side dependency = no crash on refresh)
+  useEffect(() => {
+    if (initialTeam) return // already have data from server
+    supabase.from('profiles').select('*').order('full_name').then(({ data }) => {
+      setTeam(data ?? [])
+      setLoadingTeam(false)
+    })
+  }, [])
   const [expandedPerms, setExpandedPerms] = useState<string | null>(null)
   const [addEmail, setAddEmail] = useState('')
   const [addName, setAddName] = useState('')
@@ -106,6 +116,14 @@ export default function TeamView({ team: initialTeam }: Props) {
   }
 
   const categories = [...new Set(ALL_PERMS.map((p) => p.cat))]
+
+  if (loadingTeam) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
+        <p style={{ color: '#7A756E', fontSize: 13 }}>Loading team…</p>
+      </div>
+    )
+  }
 
   if (!isAdmin) {
     return <ProfileView profile={me!} team={team} />
