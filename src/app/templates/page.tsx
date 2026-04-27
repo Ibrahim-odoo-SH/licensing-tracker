@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import TemplatesView from '@/components/views/TemplatesView'
 
+export const dynamic = 'force-dynamic'
+
 export default async function TemplatesPage() {
   const supabase = await createClient()
 

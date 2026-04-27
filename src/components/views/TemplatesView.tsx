@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { STAGES, STAGE_META } from '@/lib/constants'
 import type { Stage } from '@/lib/types'
@@ -61,7 +61,7 @@ interface Props {
   team: TeamMember[]
 }
 
-export default function TemplatesView({ initialTemplates, team }: Props) {
+export default function TemplatesView({ initialTemplates, team: initialTeam }: Props) {
   const supabase = createClient()
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>(
     Object.fromEntries(initialTemplates.map((t) => [t.stage, t]))
@@ -69,6 +69,17 @@ export default function TemplatesView({ initialTemplates, team }: Props) {
   const [selected, setSelected] = useState<string>(STAGES[0])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [team, setTeam] = useState<TeamMember[]>(initialTeam)
+
+  // Fetch team client-side as well — guarantees fresh data regardless of server cache
+  useEffect(() => {
+    supabase
+      .from('profiles')
+      .select('id, full_name, email, role')
+      .eq('is_active', true)
+      .order('full_name')
+      .then(({ data }) => { if (data && data.length > 0) setTeam(data) })
+  }, [])
 
   const editableStages = STAGES.filter((s) => s !== 'Archived')
   const current: EmailTemplate = templates[selected] ?? { stage: selected, ...DEFAULTS }
