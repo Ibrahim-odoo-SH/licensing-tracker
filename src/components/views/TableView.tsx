@@ -56,23 +56,12 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
 
   const owners = useMemo(() => [...new Set(records.map((r) => r.owner_name_snapshot).filter(Boolean))], [records])
 
-  // Fetch thumbnails client-side using the user's own session (respects RLS for all roles)
+  // Fetch thumbnails via server API (uses service role — works for every user regardless of RLS)
   useEffect(() => {
-    supabase
-      .from('record_attachments')
-      .select('record_id, public_url, file_type, is_primary')
-      .filter('file_type', 'ilike', 'image/%')
-      .then(({ data }) => {
-        if (!data) return
-        const map: Record<string, string> = {}
-        for (const row of data) {
-          if (!map[row.record_id]) map[row.record_id] = row.public_url
-        }
-        for (const row of data) {
-          if (row.is_primary) map[row.record_id] = row.public_url
-        }
-        setThumbnails(map)
-      })
+    fetch('/api/thumbnails')
+      .then((r) => r.json())
+      .then(({ thumbnails: map }) => { if (map) setThumbnails(map) })
+      .catch(() => {})
   }, [])
 
   // Auto-open create modal when navigated here with ?new=1
