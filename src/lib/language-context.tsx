@@ -326,7 +326,7 @@ const T = {
     settings_saving:      'Enregistrement…',
     settings_saved:       '✓ Enregistré !',
   },
-} as const
+}
 
 export type Translations = typeof T['en']
 
