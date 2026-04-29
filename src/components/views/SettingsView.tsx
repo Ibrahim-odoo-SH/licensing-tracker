@@ -15,11 +15,7 @@ export default function SettingsView() {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((data) => {
-        const bools: Record<string, boolean> = {}
-        for (const key of SETTINGS.map((s) => s.key)) {
-          bools[key] = data[key] === true
-        }
-        setValues(bools)
+        setValues({ reminder_emails_enabled: data['reminder_emails_enabled'] === true })
         setLoading(false)
       })
       .catch(() => setLoading(false))
