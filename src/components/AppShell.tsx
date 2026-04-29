@@ -24,7 +24,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const teamHref  = profile?.role === 'admin' ? '/team'      : '/profile'
   const teamLabel = profile?.role === 'admin' ? 'Team'       : 'Profile'
   const extraNav  = profile?.role === 'admin'
-    ? [{ href: '/templates', label: 'Templates', abbr: 'TM' }]
+    ? [
+        { href: '/templates', label: 'Templates', abbr: 'TM' },
+        { href: '/settings',  label: 'Settings',  abbr: 'ST' },
+      ]
     : []
 
   const allNav = [...NAV, { href: teamHref, label: teamLabel, abbr: '⌂' }, ...extraNav]
