@@ -14,6 +14,10 @@ interface RecordFormProps {
   onUploadAttachment?: (file: File) => Promise<void>
   onDeleteAttachment?: (att: Attachment) => Promise<void>
   uploading?: boolean
+  /** Brands fetched from existing records that aren't in the static BRANDS list */
+  extraBrands?: string[]
+  /** Properties per brand fetched from existing records, beyond the static PROPS map */
+  extraPropsByBrand?: Record<string, string[]>
 }
 
 const fieldStyle: React.CSSProperties = {
@@ -36,6 +40,7 @@ const ACCEPTED = '.jpg,.jpeg,.png,.gif,.webp,.pdf,.svg,.ai,.psd,.eps'
 export default function RecordForm({
   initial = {}, team, onSave, onCancel,
   attachments = [], onUploadAttachment, onDeleteAttachment, uploading = false,
+  extraBrands = [], extraPropsByBrand = {},
 }: RecordFormProps) {
   const [data, setData] = useState<Partial<LicRecord>>(() => {
     const merged: Partial<LicRecord> = {
@@ -70,6 +75,7 @@ export default function RecordForm({
     }
   })
   const [saving, setSaving] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const { t, stageLabel } = useLanguage()
   const isMobile = useIsMobile()
   const cols2 = isMobile ? '1fr' : '1fr 1fr'
@@ -77,19 +83,36 @@ export default function RecordForm({
   const isNewRecord = !initial?.id
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
 
+  // Merge static constants with dynamic brands/properties fetched from existing records
+  const allBrandsMerged = [...new Set([...ALL_BRANDS, ...extraBrands])]
+
   // Custom brand / property inline-input mode
   const initBrand = (initial.brand ?? '') as string
   const initProperty = (initial.property ?? '') as string
   const [showCustomBrand, setShowCustomBrand] = useState(
-    !!initBrand && !ALL_BRANDS.includes(initBrand)
+    !!initBrand && !allBrandsMerged.includes(initBrand)
   )
   const [showCustomProperty, setShowCustomProperty] = useState(
-    !!initProperty && !(PROPS[initBrand] ?? []).includes(initProperty)
+    !!initProperty && !(PROPS[initBrand] ?? []).includes(initProperty) && !(extraPropsByBrand[initBrand] ?? []).includes(initProperty)
   )
 
   const set = (key: keyof LicRecord, val: any) => setData((prev) => ({ ...prev, [key]: val }))
 
-  const brandProps = !showCustomBrand && data.brand ? PROPS[data.brand as string] ?? [] : []
+  const brandProps = !showCustomBrand && data.brand
+    ? [
+        ...(PROPS[data.brand as string] ?? []),
+        ...(extraPropsByBrand[data.brand as string] ?? []),
+      ].filter((v, i, a) => a.indexOf(v) === i)
+    : []
+
+  /** Shared helper — used by both the file-input handler and drag-drop */
+  function addFile(file: File) {
+    if (onUploadAttachment) {
+      void onUploadAttachment(file)
+    } else if (isNewRecord) {
+      setPendingFiles((prev) => [...prev, file])
+    }
+  }
 
   function handleBrandChange(e: React.ChangeEvent<HTMLSelectElement>) {
     if (e.target.value === '__add_new__') {
@@ -123,14 +146,10 @@ export default function RecordForm({
   }
 
   // Edit mode: upload immediately via parent handler
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    if (onUploadAttachment) {
-      await onUploadAttachment(file)
-    } else if (isNewRecord) {
-      setPendingFiles((prev) => [...prev, file])
-    }
+    addFile(file)
     e.target.value = ''
   }
 
@@ -184,7 +203,7 @@ export default function RecordForm({
           ) : (
             <select style={fieldStyle} value={data.brand} onChange={handleBrandChange}>
               <option value="">{t.form_select}</option>
-              {ALL_BRANDS.map((b) => <option key={b}>{b}</option>)}
+              {allBrandsMerged.map((b) => <option key={b}>{b}</option>)}
               <option value="__add_new__">{t.form_addBrand}</option>
             </select>
           )}
@@ -332,13 +351,25 @@ export default function RecordForm({
           {/* NEW RECORD: local preview of queued files */}
           {isNewRecord && (
             pendingFiles.length === 0 ? (
-              <label style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 6, border: '2px dashed #E5E2DA', borderRadius: 8, padding: '20px 0',
-                color: '#9C998F', fontSize: 13, cursor: 'pointer', background: '#FAFAF8',
-              }}>
-                <span style={{ fontSize: 24 }}>🖼️</span>
-                <span>Click to attach images or files</span>
+              <label
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true) }}
+                onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true) }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false) }}
+                onDrop={(e) => {
+                  e.preventDefault(); e.stopPropagation(); setIsDragging(false)
+                  const file = e.dataTransfer.files[0]
+                  if (file) addFile(file)
+                }}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, border: isDragging ? '2px dashed #2D4A6F' : '2px dashed #E5E2DA',
+                  borderRadius: 8, padding: '20px 0',
+                  color: isDragging ? '#2D4A6F' : '#9C998F', fontSize: 13, cursor: 'pointer',
+                  background: isDragging ? '#EEF2FA' : '#FAFAF8',
+                  transition: 'all 0.15s',
+                }}>
+                <span style={{ fontSize: 24 }}>{isDragging ? '📂' : '🖼️'}</span>
+                <span>{isDragging ? 'Drop to attach' : 'Click or drag files here'}</span>
                 <span style={{ fontSize: 11, color: '#B8B5AD' }}>Will upload when record is saved</span>
                 <input type="file" accept={ACCEPTED} onChange={handleFileChange} style={{ display: 'none' }} />
               </label>

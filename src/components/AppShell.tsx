@@ -1,10 +1,14 @@
 'use client'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 import { useLanguage } from '@/lib/language-context'
 import { useIsMobile } from '@/lib/use-mobile'
+import { mergeDynamicBrands, uploadRecordFiles } from '@/lib/record-utils'
+import type { LicRecord, Profile } from '@/lib/types'
 import Avatar from '@/components/ui/Avatar'
+import RecordForm from '@/components/records/RecordForm'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -13,6 +17,68 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { lang, setLang, t } = useLanguage()
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // ── Global New Record modal ──
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createTeam, setCreateTeam] = useState<Profile[]>([])
+  const [extraBrands, setExtraBrands] = useState<string[]>([])
+  const [extraPropsByBrand, setExtraPropsByBrand] = useState<Record<string, string[]>>({})
+  const [createSuccess, setCreateSuccess] = useState('')
+
+  async function openNewRecord() {
+    if (isMobile) setSidebarOpen(false)
+    setCreateOpen(true)
+    // Fetch team + dynamic brands in parallel when modal opens
+    const supabase = createClient()
+    const [teamRes, brandsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
+      supabase.from('records').select('brand, property'),
+    ])
+    if (teamRes.data) setCreateTeam(teamRes.data)
+    if (brandsRes.data) {
+      const { extraBrands: eb, extraPropsByBrand: ep } = mergeDynamicBrands(brandsRes.data)
+      setExtraBrands(eb)
+      setExtraPropsByBrand(ep)
+    }
+  }
+
+  async function handleGlobalCreate(data: Partial<LicRecord>, pendingFiles?: File[]) {
+    const supabase = createClient()
+    const { data: created, error } = await supabase
+      .from('records')
+      .insert({ ...data, created_by: profile?.id, updated_by: profile?.id })
+      .select()
+      .single()
+
+    if (error || !created) {
+      alert(`Failed to save record: ${error?.message ?? 'Unknown error'}`)
+      return // Keep modal open with data intact
+    }
+
+    void supabase.from('activity_logs').insert({
+      record_id: created.id, user_id: profile?.id,
+      user_name: profile?.full_name, action_type: 'record_created',
+    })
+
+    // Update local dynamic brands so they show on next open
+    if (data.brand) {
+      setExtraBrands((prev) => prev.includes(data.brand as string) ? prev : [...prev, data.brand as string])
+      if (data.property) {
+        setExtraPropsByBrand((prev) => {
+          const b = data.brand as string; const p = data.property as string
+          const existing = prev[b] ?? []
+          return existing.includes(p) ? prev : { ...prev, [b]: [...existing, p] }
+        })
+      }
+    }
+
+    if (pendingFiles?.length) void uploadRecordFiles(supabase, created.id, pendingFiles, profile?.id ?? null)
+
+    setCreateOpen(false)
+    setCreateSuccess(`✓ ${created.internal_ref || 'Record'} created`)
+    setTimeout(() => setCreateSuccess(''), 3000)
+    router.refresh() // Re-fetch server data for the current page
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -110,7 +176,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {can('createRecords') && (
         <div style={{ padding: '14px 14px 6px' }}>
           <button
-            onClick={() => navigate('/table?new=1')}
+            onClick={openNewRecord}
             style={{
               width: '100%',
               padding: '9px 0',
@@ -299,6 +365,47 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </>
   )
 
+  // ── Global New Record modal (rendered in both layouts) ──
+  const globalModal = (
+    <>
+      {/* Success toast */}
+      {createSuccess && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: '#1A7A3A', color: '#fff', borderRadius: 10,
+          padding: '10px 22px', fontSize: 13, fontWeight: 600,
+          zIndex: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+          whiteSpace: 'nowrap', pointerEvents: 'none', letterSpacing: '0.02em',
+        }}>
+          {createSuccess}
+        </div>
+      )}
+
+      {/* New Record modal */}
+      {createOpen && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 400, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center' }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => e.preventDefault()}
+        >
+          <div style={{ background: '#fff', borderRadius: isMobile ? '14px 14px 0 0' : 14, width: isMobile ? '100%' : 620, maxHeight: isMobile ? '92vh' : '90vh', overflow: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E2DA', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#1A1A2E' }}>+ New Record</span>
+              <button onClick={() => setCreateOpen(false)} style={{ background: 'none', border: 'none', fontSize: 22, color: '#9C998F', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+            <RecordForm
+              team={createTeam}
+              onSave={handleGlobalCreate}
+              onCancel={() => setCreateOpen(false)}
+              extraBrands={extraBrands}
+              extraPropsByBrand={extraPropsByBrand}
+            />
+          </div>
+        </div>
+      )}
+    </>
+  )
+
   // ── Mobile layout ──
   if (isMobile) {
     return (
@@ -394,6 +501,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <main style={{ flex: 1, overflow: 'auto', background: '#F7F6F4', display: 'flex', flexDirection: 'column' }}>
           {children}
         </main>
+
+        {globalModal}
       </div>
     )
   }
@@ -421,6 +530,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
+      {globalModal}
     </div>
   )
 }

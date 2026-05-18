@@ -7,6 +7,7 @@ import type { LicRecord, Profile, Filters } from '@/lib/types'
 import { STAGE_META, BRAND_COLORS, PRIORITY_COLORS } from '@/lib/constants'
 import { daysSince } from '@/lib/utils'
 import { useIsMobile } from '@/lib/use-mobile'
+import { mergeDynamicBrands, uploadRecordFiles } from '@/lib/record-utils'
 import FilterBar from '@/components/records/FilterBar'
 import RecordDrawer from '@/components/records/RecordDrawer'
 import RecordForm from '@/components/records/RecordForm'
@@ -57,6 +58,8 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
   const [creating, setCreating] = useState(false)
   const [notifying, setNotifying] = useState<LicRecord | null>(null)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const [extraBrands, setExtraBrands] = useState<string[]>([])
+  const [extraPropsByBrand, setExtraPropsByBrand] = useState<Record<string, string[]>>({})
 
   const owners = useMemo(() => [...new Set(records.map((r) => r.owner_name_snapshot).filter(Boolean))], [records])
 
@@ -66,6 +69,17 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
       .then((r) => r.json())
       .then(({ thumbnails: map }) => { if (map) setThumbnails(map) })
       .catch(() => {})
+  }, [])
+
+  // Fetch brands/properties that exist in the DB but aren't in static constants
+  useEffect(() => {
+    supabase.from('records').select('brand, property').then(({ data }) => {
+      if (data) {
+        const { extraBrands: eb, extraPropsByBrand: ep } = mergeDynamicBrands(data)
+        setExtraBrands(eb)
+        setExtraPropsByBrand(ep)
+      }
+    })
   }, [])
 
   // Auto-open create modal when navigated here with ?new=1
@@ -80,65 +94,46 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
   }, [])
   const filtered = useMemo(() => applyFilters(records, filters), [records, filters])
 
-  // Truly fire-and-forget — called without await so the form never waits on it
-  function uploadPendingFiles(recordId: string, files: File[]) {
-    void (async () => {
-      for (const file of files) {
-        try {
-          const mimeType = file.type || 'application/octet-stream'
-          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-          const filePath = `${recordId}/${Date.now()}-${safeName}`
-          const { error: upErr } = await supabase.storage
-            .from('record-attachments')
-            .upload(filePath, file, { contentType: mimeType, upsert: false })
-          if (upErr) { console.error('Storage upload error:', upErr.message); continue }
-          const { data: { publicUrl } } = supabase.storage
-            .from('record-attachments')
-            .getPublicUrl(filePath)
-          const { error: dbErr } = await supabase.from('record_attachments').insert({
-            record_id: recordId, file_name: file.name, file_path: filePath,
-            file_type: mimeType, file_size: file.size,
-            public_url: publicUrl, uploaded_by: profile?.id ?? null,
-          })
-          if (dbErr) console.error('record_attachments insert error:', dbErr.message)
-        } catch (e) {
-          console.error('Attachment upload failed:', e)
-        }
-      }
-    })()
-  }
-
   async function handleCreate(data: Partial<LicRecord>, pendingFiles?: File[]) {
-    try {
-      const { data: created, error } = await supabase
-        .from('records')
-        .insert({ ...data, created_by: profile?.id, updated_by: profile?.id })
-        .select()
-        .single()
+    const { data: created, error } = await supabase
+      .from('records')
+      .insert({ ...data, created_by: profile?.id, updated_by: profile?.id })
+      .select()
+      .single()
 
-      if (error || !created) {
-        console.error('Record insert error:', error?.message)
-        alert(`Failed to save record: ${error?.message ?? 'Unknown error'}`)
-        return
-      }
-
-      void supabase.from('activity_logs').insert({
-        record_id: created.id, user_id: profile?.id,
-        user_name: profile?.full_name, action_type: 'record_created',
-      })
-
-      setRecords((prev) => [created, ...prev])
-
-      // Fire-and-forget uploads before closing — form is already unblocked
-      if (pendingFiles?.length) uploadPendingFiles(created.id, pendingFiles)
-
-    } catch (e: any) {
-      console.error('handleCreate exception:', e)
-      alert(`Unexpected error: ${e?.message ?? e}`)
-    } finally {
-      // ALWAYS close the modal, even if something failed
-      setCreating(false)
+    if (error || !created) {
+      // Keep the modal open with all form data intact so the user can retry
+      alert(`Failed to save record: ${error?.message ?? 'Unknown error'}`)
+      return
     }
+
+    void supabase.from('activity_logs').insert({
+      record_id: created.id, user_id: profile?.id,
+      user_name: profile?.full_name, action_type: 'record_created',
+    })
+
+    setRecords((prev) => [created, ...prev])
+
+    // Update dynamic brands/properties so the new brand shows up in future opens
+    if (data.brand) {
+      setExtraBrands((prev) => {
+        const b = data.brand as string
+        return prev.includes(b) ? prev : [...prev, b]
+      })
+      if (data.brand && data.property) {
+        setExtraPropsByBrand((prev) => {
+          const b = data.brand as string
+          const p = data.property as string
+          const existing = prev[b] ?? []
+          return existing.includes(p) ? prev : { ...prev, [b]: [...existing, p] }
+        })
+      }
+    }
+
+    // Fire-and-forget uploads — record is created, close the modal immediately
+    if (pendingFiles?.length) void uploadRecordFiles(supabase, created.id, pendingFiles, profile?.id ?? null)
+
+    setCreating(false)
   }
 
   function handleUpdate(r: LicRecord) {
@@ -308,13 +303,23 @@ export default function TableView({ initialRecords, team, initialFilters }: Prop
       </div>
 
       {creating && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center' }}>
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center' }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => e.preventDefault()}
+        >
           <div style={{ background: '#fff', borderRadius: isMobile ? '14px 14px 0 0' : 14, width: isMobile ? '100%' : 600, maxHeight: isMobile ? '92vh' : '90vh', overflow: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.15)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E2DA', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 700, fontSize: 15 }}>New Record</span>
               <button onClick={() => setCreating(false)} style={{ background: 'none', border: 'none', fontSize: 20, color: '#9C998F', cursor: 'pointer' }}>×</button>
             </div>
-            <RecordForm team={team} onSave={handleCreate} onCancel={() => setCreating(false)} />
+            <RecordForm
+              team={team}
+              onSave={handleCreate}
+              onCancel={() => setCreating(false)}
+              extraBrands={extraBrands}
+              extraPropsByBrand={extraPropsByBrand}
+            />
           </div>
         </div>
       )}
